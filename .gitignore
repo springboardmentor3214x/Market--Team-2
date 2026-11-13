@@ -1,0 +1,14 @@
+# Environment variables (NEVER push passwords!)
+.env
+
+# Python virtual environments & cache
+.venv/
+venv/
+stock-research-backend/
+__pycache__/
+*.pyc
+.env
+__pycache__/
+*.pyc
+stock-research-backend/
+.venv/
