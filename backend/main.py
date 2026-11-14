@@ -1,8 +1,51 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from backend.app.core.config import settings
+from backend.app.db.session import engine, Base
+import backend.app.models  # Register all models with Base.metadata
+from backend.app.routers.auth import router as auth_router
+from backend.app.routers.preferences import router as preferences_router
+from backend.app.routers.watchlist import router as watchlist_router
+from backend.app.routers.research import router as research_router
 
-app = FastAPI(title="Market Research API")
+# Ensure all database tables exist
+Base.metadata.create_all(bind=engine)
 
-@app.get("/health")
+app = FastAPI(
+    title="Market Research AI - Module 1",
+    description="User Authentication and Research Workspace API (FastAPI + PostgreSQL/SQLite + React)",
+    version="1.0.0"
+)
+
+# Configure CORS Middleware for React frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 1. Mount routers directly at root for seamless React frontend integration
+app.include_router(auth_router)
+app.include_router(preferences_router)
+app.include_router(watchlist_router)
+app.include_router(research_router)
+
+# 2. Also mount routers under /api/v1 prefix for standard API versioning
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(preferences_router, prefix="/api/v1")
+app.include_router(watchlist_router, prefix="/api/v1")
+app.include_router(research_router, prefix="/api/v1")
+
+@app.get("/", tags=["Health"])
+def root():
+    return {
+        "status": "online",
+        "module": "Module 1: User Authentication & Research Workspace",
+        "docs_url": "/docs"
+    }
+
+@app.get("/health", tags=["Health"])
 def health():
     return {"status": "ok"}
-    

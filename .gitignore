@@ -9,6 +9,10 @@ venv/
 __pycache__/
 *.pyc
 stock-research-backend/
+*.sqlite
+*.sqlite3
+*.db
+.pytest_cache/
 
 # Node & dependencies
 node_modules/
