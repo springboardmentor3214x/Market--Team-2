@@ -1,9 +1,8 @@
 import { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 function Login() {
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -12,6 +11,7 @@ function Login() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError("");
 
     try {
       const response = await axios.post(
@@ -23,28 +23,32 @@ function Login() {
       );
 
       const token = response.data.access_token;
-
       sessionStorage.setItem("token", token);
 
       navigate("/dashboard");
 
-    } catch (error) {
-      setError(
-        error.response?.data?.detail || "Invalid credentials"
-      );
+    } catch (err) {
+      const errDetail = err.response?.data?.detail;
+      if (Array.isArray(errDetail)) {
+        setError(errDetail.map((d) => d.msg).join(", "));
+      } else if (typeof errDetail === "string") {
+        setError(errDetail);
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError("Invalid credentials or server unavailable");
+      }
     }
   };
 
   return (
     <div className="auth-container">
-
       <h2>Login</h2>
 
       <form onSubmit={handleLogin}>
-
         <input
           type="email"
-          placeholder="Email"
+          placeholder="Email Address"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -59,11 +63,17 @@ function Login() {
         />
 
         <button type="submit">Login</button>
-
       </form>
 
-      <p>{error}</p>
+      {error && (
+        <p style={{ color: "red", marginTop: "10px" }}>
+          {error}
+        </p>
+      )}
 
+      <p style={{ marginTop: "15px" }}>
+        Don't have an account? <Link to="/register">Register here</Link>
+      </p>
     </div>
   );
 }
