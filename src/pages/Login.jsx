@@ -1,11 +1,13 @@
+
 import { useState } from "react";
 import axios from "axios";
-import { useNavigate, Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
 
@@ -14,6 +16,8 @@ function Login() {
     setError("");
 
     try {
+      setLoading(true);
+
       const response = await axios.post(
         "http://localhost:8000/login",
         {
@@ -23,21 +27,17 @@ function Login() {
       );
 
       const token = response.data.access_token;
+
       sessionStorage.setItem("token", token);
 
       navigate("/dashboard");
 
-    } catch (err) {
-      const errDetail = err.response?.data?.detail;
-      if (Array.isArray(errDetail)) {
-        setError(errDetail.map((d) => d.msg).join(", "));
-      } else if (typeof errDetail === "string") {
-        setError(errDetail);
-      } else if (err.message) {
-        setError(err.message);
-      } else {
-        setError("Invalid credentials or server unavailable");
-      }
+    } catch (error) {
+      setError(
+        error.response?.data?.detail || "Invalid credentials"
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -62,17 +62,16 @@ function Login() {
           required
         />
 
-        <button type="submit">Login</button>
+        <button type="submit" disabled={loading}>
+          {loading ? "Logging in..." : "Login"}
+        </button>
       </form>
 
-      {error && (
-        <p style={{ color: "red", marginTop: "10px" }}>
-          {error}
-        </p>
-      )}
+      {error && <p>{error}</p>}
 
-      <p style={{ marginTop: "15px" }}>
-        Don't have an account? <Link to="/register">Register here</Link>
+      <p>
+        Don't have an account?{" "}
+        <Link to="/register">Register here</Link>
       </p>
     </div>
   );
