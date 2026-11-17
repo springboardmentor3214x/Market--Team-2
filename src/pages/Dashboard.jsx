@@ -1,21 +1,35 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import api from "../services/api";
 
 function Dashboard() {
-  const [searchQuery, setSearchQuery] = useState("INFY");
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const initialTicker = searchParams.get("ticker") || "INFY";
+
+  const [searchQuery, setSearchQuery] = useState(initialTicker);
   const [searchResults, setSearchResults] = useState([]);
   const [selectedStock, setSelectedStock] = useState(null);
   const [period, setPeriod] = useState("3mo");
   const [loading, setLoading] = useState(false);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [watchlistMessage, setWatchlistMessage] = useState("");
+  const [recentHistory, setRecentHistory] = useState([]);
   const navigate = useNavigate();
 
-  // Load default stock (INFY) on mount
+  // Load default or query-param stock and research history on mount
   useEffect(() => {
-    loadStockData("INFY", period);
-  }, []);
+    loadStockData(initialTicker, period);
+    fetchResearchHistory();
+  }, [initialTicker]);
+
+  const fetchResearchHistory = async () => {
+    try {
+      const res = await api.get("/research-history?limit=6");
+      setRecentHistory(res.data || []);
+    } catch (err) {
+      console.log("Could not load recent history:", err);
+    }
+  };
 
   const handleSearch = async (query) => {
     setSearchQuery(query);
@@ -23,28 +37,46 @@ function Dashboard() {
       setSearchResults([]);
       return;
     }
-    setSearchLoading(true);
     try {
       const res = await api.get(`/stocks/search?query=${encodeURIComponent(query)}`);
       setSearchResults(res.data || []);
     } catch (err) {
       console.error("Search error:", err);
-    } finally {
-      setSearchLoading(false);
     }
   };
 
   const loadStockData = async (ticker, selectedPeriod = period) => {
+    if (!ticker || !ticker.trim()) return;
     setLoading(true);
     setWatchlistMessage("");
     setSearchResults([]);
+    const cleanTicker = ticker.trim().toUpperCase();
+
     try {
-      const res = await api.get(`/stocks/${encodeURIComponent(ticker)}?period=${selectedPeriod}`);
+      const res = await api.get(`/stocks/${encodeURIComponent(cleanTicker)}?period=${selectedPeriod}`);
       setSelectedStock(res.data);
-      setSearchQuery(ticker);
+      setSearchQuery(cleanTicker);
+
+      // Explicitly record research activity to update user's research history
+      try {
+        await api.post("/research-history", {
+          ticker_symbol: cleanTicker,
+          company_name: res.data.metadata?.name || cleanTicker,
+          analysis_period: selectedPeriod,
+          research_summary: {
+            price: res.data.metadata?.current_price,
+            change_percent: res.data.metadata?.price_change_percent,
+            source: res.data.metadata?.data_source
+          }
+        });
+        // Refresh recent history view
+        fetchResearchHistory();
+      } catch (logErr) {
+        console.log("Research history log note:", logErr);
+      }
     } catch (err) {
       console.error("Failed to load stock data:", err);
-      alert(err.response?.data?.detail || `Failed to fetch data for ${ticker}`);
+      alert(err.response?.data?.detail || `Failed to fetch data for ${cleanTicker}`);
     } finally {
       setLoading(false);
     }
@@ -102,9 +134,7 @@ function Dashboard() {
           <span>Range: {selectedStock?.metadata?.currency || "$"} {minPrice.toFixed(2)} - {maxPrice.toFixed(2)}</span>
         </div>
         <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "240px", overflow: "visible" }}>
-          {/* Fill area */}
           <polygon points={fillArea} fill={fillColor} />
-          {/* Stroke Line */}
           <polyline fill="none" stroke={strokeColor} strokeWidth="2.5" points={points} />
         </svg>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: "8px", fontSize: "12px", color: "#6b7280" }}>
@@ -126,12 +156,12 @@ function Dashboard() {
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #374151", paddingBottom: "16px", marginBottom: "24px" }}>
         <div>
           <h1 style={{ fontSize: "28px", margin: 0, color: "#f3f4f6" }}>Market Research AI</h1>
-          <p style={{ margin: "4px 0 0", color: "#9ca3af", fontSize: "14px" }}>Module 2: Stock Search & Market Data Collection</p>
+          <p style={{ margin: "4px 0 0", color: "#9ca3af", fontSize: "14px" }}>Module 1 & 2: User Workspace, Stock Search & Live Data</p>
         </div>
         <nav style={{ display: "flex", gap: "12px", alignItems: "center" }}>
           <Link to="/watchlist" style={{ color: "#38bdf8", textDecoration: "none", fontSize: "14px", padding: "6px 12px", background: "#1e293b", borderRadius: "6px" }}>Watchlist</Link>
           <Link to="/preferences" style={{ color: "#38bdf8", textDecoration: "none", fontSize: "14px", padding: "6px 12px", background: "#1e293b", borderRadius: "6px" }}>Preferences</Link>
-          <Link to="/research-history" style={{ color: "#38bdf8", textDecoration: "none", fontSize: "14px", padding: "6px 12px", background: "#1e293b", borderRadius: "6px" }}>History</Link>
+          <Link to="/research-history" style={{ color: "#38bdf8", textDecoration: "none", fontSize: "14px", padding: "6px 12px", background: "#1e293b", borderRadius: "6px" }}>History ({recentHistory.length})</Link>
           <button onClick={handleLogout} style={{ background: "#ef4444", color: "#fff", border: "none", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "14px" }}>Logout</button>
         </nav>
       </header>
@@ -168,7 +198,7 @@ function Dashboard() {
               cursor: "pointer"
             }}
           >
-            {loading ? "Fetching Data..." : "Analyze Stock"}
+            {loading ? "Analyzing..." : "Analyze Stock"}
           </button>
         </div>
 
@@ -235,6 +265,41 @@ function Dashboard() {
           </ul>
         )}
       </section>
+
+      {/* Recent Research History Quick Access Bar */}
+      {recentHistory.length > 0 && (
+        <section style={{ marginBottom: "20px", padding: "12px 16px", background: "#111827", border: "1px solid #374151", borderRadius: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#9ca3af" }}>🕒 Your Recent Research History:</span>
+            <Link to="/research-history" style={{ fontSize: "12px", color: "#60a5fa", textDecoration: "none" }}>View All &rarr;</Link>
+          </div>
+          <div style={{ display: "flex", gap: "8px", overflowX: "auto", paddingBottom: "4px" }}>
+            {recentHistory.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => loadStockData(item.stock_symbol || item.ticker_symbol)}
+                style={{
+                  background: "#1e293b",
+                  border: "1px solid #334155",
+                  borderRadius: "6px",
+                  padding: "6px 12px",
+                  color: "#f1f5f9",
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  whiteSpace: "nowrap"
+                }}
+                title={`Researched at: ${item.created_at}`}
+              >
+                <strong style={{ color: "#38bdf8" }}>{item.stock_symbol || item.ticker_symbol}</strong>
+                <span style={{ color: "#94a3b8", fontSize: "11px" }}>{item.company_name?.slice(0, 15)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Selected Stock Overview Card */}
       {selectedStock && meta && (

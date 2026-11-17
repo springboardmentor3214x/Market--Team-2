@@ -41,3 +41,36 @@ def get_user_research_history(
         .limit(limit)
         .all()
     )
+
+def delete_research_entry(
+    db: Session,
+    user_id: uuid.UUID,
+    history_id: uuid.UUID
+) -> bool:
+    """
+    Deletes a specific research history record for a user.
+    """
+    entry = (
+        db.query(ResearchHistory)
+        .filter(
+            ResearchHistory.user_id == user_id,
+            ResearchHistory.history_id == history_id
+        )
+        .first()
+    )
+    if not entry:
+        return False
+    db.delete(entry)
+    db.commit()
+    return True
+
+def clear_user_research_history(
+    db: Session,
+    user_id: uuid.UUID
+) -> int:
+    """
+    Clears all research history records for a user.
+    """
+    count = db.query(ResearchHistory).filter(ResearchHistory.user_id == user_id).delete()
+    db.commit()
+    return count

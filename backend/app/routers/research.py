@@ -1,3 +1,4 @@
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -7,7 +8,9 @@ from backend.app.models.user import User
 from backend.app.schemas.research_history import ResearchCreate, ResearchItem
 from backend.app.crud.crud_research import (
     log_research_activity,
-    get_user_research_history
+    get_user_research_history,
+    delete_research_entry,
+    clear_user_research_history
 )
 
 router = APIRouter(prefix="/research-history", tags=["Research History"])
@@ -77,3 +80,33 @@ def record_research(
         "created_at": entry.searched_at.strftime("%Y-%m-%d %H:%M:%S") if entry.searched_at else "",
         "searched_at": entry.searched_at.isoformat() if entry.searched_at else ""
     }
+
+@router.delete("/{history_id}", status_code=status.HTTP_200_OK)
+def remove_history_entry(
+    history_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Deletes a specific research history record by its UUID.
+    """
+    try:
+        h_uuid = uuid.UUID(history_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid history ID")
+
+    success = delete_research_entry(db, current_user.user_id, h_uuid)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="History record not found")
+    return {"message": "History entry deleted"}
+
+@router.delete("", status_code=status.HTTP_200_OK)
+def clear_all_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Clears all research history for the current user.
+    """
+    deleted_count = clear_user_research_history(db, current_user.user_id)
+    return {"message": f"Cleared {deleted_count} history records"}
