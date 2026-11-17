@@ -1,16 +1,20 @@
 from sqlalchemy import inspect
 from database import engine, Base
-import models  # Imports User, Watchlist, and ResearchHistory
+import models  # Imports all Module 1 & Module 2 models
 
 def create_tables():
-    print("⏳ Creating tables in PostgreSQL...")
+    print("⏳ Creating Module 1 & Module 2 tables in PostgreSQL...")
     Base.metadata.create_all(bind=engine)
     
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     print("✅ Tables currently in stock_research_db:", tables)
 
-    for table_name in ["users", "watchlists", "research_history"]:
+    expected_tables = [
+        "users", "watchlists", "research_history",
+        "companies", "stock_prices", "financial_statements"
+    ]
+    for table_name in expected_tables:
         if table_name in tables:
             columns = [col["name"] for col in inspector.get_columns(table_name)]
             fks = [fk["referred_table"] for fk in inspector.get_foreign_keys(table_name)]
