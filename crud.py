@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import models
+import hashlib
 
 
 # ==========================================
@@ -382,3 +383,256 @@ def get_company_financial_statements(
     if statement_type:
         query = query.filter(models.FinancialStatement.statement_type == statement_type.upper().strip())
     return query.order_by(models.FinancialStatement.period_ending.desc()).all()
+
+# ============================================================
+# 6. MODULE 3: RESEARCH TASKS, AGENT RESULTS, SOURCES, REPORTS
+# ============================================================
+
+def create_research_task(
+    db: Session,
+    user_id: uuid.UUID,
+    ticker_symbol: str,
+    market: str,
+    requested_period: str
+) -> models.ResearchTask:
+    """
+    Creates a new research task when a user triggers stock analysis.
+    Initial status is always PENDING.
+    """
+    task = models.ResearchTask(
+        user_id=user_id,
+        ticker_symbol=ticker_symbol.upper().strip(),
+        market=market.upper().strip(),
+        requested_period=requested_period,
+        status=models.TaskStatus.PENDING
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def get_research_task(
+    db: Session,
+    task_id: uuid.UUID
+) -> Optional[models.ResearchTask]:
+    """
+    Fetches a single research task by its UUID.
+    Used by API endpoints to check task status.
+    """
+    return (
+        db.query(models.ResearchTask)
+        .filter(models.ResearchTask.task_id == task_id)
+        .first()
+    )
+
+
+def get_research_tasks_by_user(
+    db: Session,
+    user_id: uuid.UUID,
+    limit: int = 20
+) -> List[models.ResearchTask]:
+    """
+    Retrieves all research tasks for a specific user (most recent first).
+    Used to populate research history on the dashboard.
+    """
+    return (
+        db.query(models.ResearchTask)
+        .filter(models.ResearchTask.user_id == user_id)
+        .order_by(models.ResearchTask.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def update_task_status(
+    db: Session,
+    task_id: uuid.UUID,
+    status: models.TaskStatus,
+    error_message: Optional[str] = None
+) -> Optional[models.ResearchTask]:
+    """
+    Updates the status of a research task (PENDING → RUNNING → COMPLETED/FAILED).
+    Automatically sets completed_at when the task reaches a terminal state.
+    """
+    task = get_research_task(db, task_id)
+    if not task:
+        return None
+
+    task.status = status
+
+    if error_message:
+        task.error_message = error_message
+
+    # Set completion timestamp for terminal states
+    if status in (
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.FAILED,
+        models.TaskStatus.PARTIAL
+    ):
+        task.completed_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def upsert_agent_result(
+    db: Session,
+    task_id: uuid.UUID,
+    agent_name: models.AgentName,
+    status: models.AgentStatus,
+    output_json: Optional[Dict[str, Any]] = None,
+    error_message: Optional[str] = None
+) -> None:
+    """
+    Inserts or updates an agent's result for a given task.
+    Safe to call multiple times — retries won't create duplicate rows.
+    Uniqueness is enforced by (task_id, agent_name).
+    """
+    now_utc = datetime.now(timezone.utc)
+
+    stmt = pg_insert(models.AgentResult).values(
+        result_id=uuid.uuid4(),
+        task_id=task_id,
+        agent_name=agent_name,
+        status=status,
+        output_json=output_json,
+        error_message=error_message,
+        created_at=now_utc,
+        updated_at=now_utc
+    )
+
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_agent_result_task_agent",
+        set_={
+            "status":        stmt.excluded.status,
+            "output_json":   stmt.excluded.output_json,
+            "error_message": stmt.excluded.error_message,
+            "updated_at":    now_utc
+        }
+    )
+
+    db.execute(stmt)
+    db.commit()
+
+
+def get_agent_result(
+    db: Session,
+    task_id: uuid.UUID,
+    agent_name: models.AgentName
+) -> Optional[models.AgentResult]:
+    """
+    Fetches the result of a specific agent for a given task.
+    """
+    return (
+        db.query(models.AgentResult)
+        .filter(
+            models.AgentResult.task_id == task_id,
+            models.AgentResult.agent_name == agent_name
+        )
+        .first()
+    )
+
+
+def get_all_agent_results_for_task(
+    db: Session,
+    task_id: uuid.UUID
+) -> List[models.AgentResult]:
+    """
+    Fetches results from ALL agents for a given task.
+    Used by the Supervisor Agent (Module 4) to aggregate findings.
+    """
+    return (
+        db.query(models.AgentResult)
+        .filter(models.AgentResult.task_id == task_id)
+        .all()
+    )
+
+
+def bulk_save_source_documents(
+    db: Session,
+    task_id: uuid.UUID,
+    sources: List[Dict[str, Any]]
+) -> int:
+    """
+    Batch inserts news/announcement sources linked to a research task.
+    Deduplicates within the batch using SHA-256 of the source URL.
+
+    Each dict in sources must have:
+        - source_type (str): e.g. "NEWS_ARTICLE"
+        - source_url  (str): the original URL
+        - title       (str, optional)
+        - published_at (datetime, optional)
+    """
+    if not sources:
+        return 0
+
+    now_utc = datetime.now(timezone.utc)
+    seen_hashes = set()
+    docs_to_insert = []
+
+    for s in sources:
+        url_hash = hashlib.sha256(s["source_url"].encode("utf-8")).hexdigest()
+
+        # Skip duplicates within this batch
+        if url_hash in seen_hashes:
+            continue
+        seen_hashes.add(url_hash)
+
+        docs_to_insert.append(
+            models.SourceDocument(
+                task_id=task_id,
+                source_type=s["source_type"],
+                title=s.get("title"),
+                source_url=s["source_url"],
+                published_at=s.get("published_at"),
+                retrieved_at=now_utc,
+                content_hash=url_hash
+            )
+        )
+
+    if docs_to_insert:
+        db.add_all(docs_to_insert)
+        db.commit()
+
+    return len(docs_to_insert)
+
+
+def save_research_report(
+    db: Session,
+    task_id: uuid.UUID,
+    report_content: Dict[str, Any],
+    summary: str,
+    limitations: str
+) -> models.ResearchReport:
+    """
+    Saves the final consolidated research report for a task.
+    report_content is the full structured JSONB report from all agents.
+    Called at the end of Module 4's Supervisor Agent workflow.
+    """
+    report = models.ResearchReport(
+        task_id=task_id,
+        report_content=report_content,
+        summary=summary,
+        limitations=limitations
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    return report
+
+
+def get_report_by_task(
+    db: Session,
+    task_id: uuid.UUID
+) -> Optional[models.ResearchReport]:
+    """
+    Retrieves the final research report for a given task.
+    Returns None if the report hasn't been generated yet.
+    """
+    return (
+        db.query(models.ResearchReport)
+        .filter(models.ResearchReport.task_id == task_id)
+        .first()
+    )
