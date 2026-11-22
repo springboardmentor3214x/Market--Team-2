@@ -113,10 +113,26 @@ def analyze_technical(
     "/news",
     response_model=NewsAnalysisResponse
 )
-def analyze_news(payload: NewsAnalysisRequest):
-    """Run News and Sentiment Agent analysis on supplied articles."""
+def analyze_news(
+    payload: NewsAnalysisRequest,
+    db: Session = Depends(get_db)
+):
+    """Run News and Sentiment Agent analysis on supplied articles or auto-fetch live market news."""
 
-    return news_agent.analyze(payload)
+    return news_agent.analyze(payload, db=db)
+
+
+@router.get(
+    "/news/{ticker}",
+    response_model=NewsAnalysisResponse
+)
+def get_live_news_analysis(
+    ticker: str,
+    db: Session = Depends(get_db)
+):
+    """Fetch live market news for a ticker and run News and Sentiment Agent analysis."""
+    request = NewsAnalysisRequest(ticker=ticker, auto_fetch=True)
+    return news_agent.analyze(request, db=db)
 
 
 @router.post(
