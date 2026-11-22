@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  Clock,
+  Trash2,
+  ArrowRight,
+  RotateCcw,
+  Search,
+  AlertCircle
+} from "lucide-react";
 import api from "../services/api";
 
 function ResearchHistory() {
@@ -45,7 +53,7 @@ function ResearchHistory() {
     try {
       await api.delete("/research-history");
       setHistory([]);
-      setMessage("All research history cleared.");
+      setMessage("All research history cleared successfully.");
       setTimeout(() => setMessage(""), 3000);
     } catch (err) {
       console.error("Clear all error:", err);
@@ -59,107 +67,120 @@ function ResearchHistory() {
   };
 
   return (
-    <div className="history-container">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <button
-          className="back-button"
-          onClick={() => navigate("/dashboard")}
-        >
-          ← Back to Dashboard
-        </button>
-
-        {history.length > 0 && (
-          <button
-            onClick={handleClearAll}
-            style={{
-              background: "#ef4444",
-              color: "#ffffff",
-              border: "none",
-              padding: "8px 16px",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontWeight: "600",
-              fontSize: "13px"
-            }}
-          >
-            Clear All History
-          </button>
-        )}
-      </div>
-
-      <div className="history-header">
-        <h1>Research History</h1>
-        <p>Track and revisit your past stock analysis activities (Isolated per user account).</p>
-      </div>
-
-      {message && (
-        <div style={{ marginBottom: "16px", padding: "10px 14px", background: "#1e293b", border: "1px solid #3b82f6", borderRadius: "8px", color: "#93c5fd", fontSize: "14px" }}>
-          {message}
+    <div className="history-page">
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
+        <div>
+          <h1 style={{ fontSize: "26px", fontWeight: "800", color: "#ffffff", letterSpacing: "-0.4px" }}>
+            Research History
+          </h1>
+          <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginTop: "4px" }}>
+            Audit log of previously researched stocks, telemetry parameters, and timestamps.
+          </p>
         </div>
-      )}
 
-      <div className="history-content">
-        {loading ? (
-          <p className="history-message">Loading research history...</p>
-        ) : error ? (
-          <p className="history-error">{error}</p>
-        ) : history.length === 0 ? (
-          <div className="history-empty">
-            <h3>No Research History Yet</h3>
-            <p>Your researched companies will appear here whenever you search stocks.</p>
-            <button onClick={() => navigate("/stock-research")}>
-              Start Researching
+        <div style={{ display: "flex", gap: "10px" }}>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="btn-danger"
+            >
+              <Trash2 size={14} />
+              <span>Clear History</span>
             </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className="back-button"
+          >
+            &larr; Back to Dashboard
+          </button>
+        </div>
+      </div>
+
+      {message && <div className="alert-box alert-success" style={{ marginBottom: "20px" }}>{message}</div>}
+      {error && <div className="alert-box alert-error" style={{ marginBottom: "20px" }}>{error}</div>}
+
+      {/* History Table / Panel */}
+      <div className="tab-content-panel">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#ffffff", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Clock size={18} style={{ color: "var(--warning-amber)" }} />
+            Logged Inquiries ({history.length})
+          </h3>
+        </div>
+
+        {loading ? (
+          <p style={{ color: "var(--text-muted)", padding: "20px 0" }}>Loading research audit logs...</p>
+        ) : history.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px 20px", color: "var(--text-secondary)" }}>
+            <Clock size={36} style={{ color: "var(--text-muted)", marginBottom: "12px" }} />
+            <h4 style={{ color: "#ffffff", fontSize: "16px", marginBottom: "6px" }}>No Research Records Found</h4>
+            <p style={{ fontSize: "13.5px", maxWidth: "380px", margin: "0 auto" }}>
+              Stocks you search in Stock Research will automatically be logged here for easy reference.
+            </p>
           </div>
         ) : (
-          <div className="history-list">
-            {history.map((item) => {
-              const symbol = item.stock_symbol || item.ticker_symbol || "UNKNOWN";
-              return (
-                <div
-                  className="history-item"
-                  key={item.id}
-                  onClick={() => handleOpenStock(symbol)}
-                  style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                  title="Click to view full research & financial details"
-                >
-                  <div>
-                    <h3>{item.company_name || symbol}</h3>
-                    <p className="history-symbol">
-                      Stock Symbol: <strong>{symbol}</strong>
-                      {item.analysis_period && ` • Period: ${item.analysis_period}`}
-                    </p>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-                    <div className="history-date">
-                      <span>Research Date</span>
-                      <p>
-                        {item.created_at
-                          ? new Date(item.created_at).toLocaleString()
-                          : "Recently"}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={(e) => handleDelete(item.id, e)}
-                      style={{
-                        background: "transparent",
-                        color: "#ef4444",
-                        border: "1px solid #ef4444",
-                        borderRadius: "6px",
-                        padding: "6px 10px",
-                        fontSize: "12px",
-                        cursor: "pointer"
-                      }}
-                      title="Remove this research entry"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="table-responsive">
+            <table className="fin-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Company Name</th>
+                  <th>Window</th>
+                  <th>Queried At</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((item) => {
+                  const symbol = item.stock_symbol || item.ticker_symbol;
+                  return (
+                    <tr key={item.id}>
+                      <td>
+                        <span style={{ fontWeight: "800", color: "#60a5fa", fontFamily: "var(--font-mono)", fontSize: "15px" }}>
+                          {symbol}
+                        </span>
+                      </td>
+                      <td>{item.company_name || symbol}</td>
+                      <td>
+                        <span className="exchange-pill">
+                          {item.analysis_period || "3mo"}
+                        </span>
+                      </td>
+                      <td style={{ color: "var(--text-muted)", fontSize: "12px" }}>
+                        {item.created_at ? new Date(item.created_at).toLocaleString() : "Recent"}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <div style={{ display: "inline-flex", gap: "8px" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenStock(symbol)}
+                            className="btn-secondary"
+                            style={{ padding: "6px 12px", fontSize: "12px" }}
+                          >
+                            <span>Re-analyze</span>
+                            <ArrowRight size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDelete(item.id, e)}
+                            className="btn-danger"
+                            style={{ padding: "6px 10px" }}
+                            title="Delete entry"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

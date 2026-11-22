@@ -9,15 +9,19 @@ import ResearchHistory from "./pages/ResearchHistory";
 import StockResearch from "./pages/StockResearch";
 
 import ProtectedRoute from "./components/ProtectedRoute";
+import Layout from "./components/Layout";
 
 function NotFound() {
   return (
-    <div style={{ textAlign: "center", marginTop: "100px", color: "#f3f4f6" }}>
-      <h1>404 - Page Not Found</h1>
-      <p style={{ color: "#9ca3af", margin: "16px 0" }}>The page you are looking for does not exist.</p>
-      <Link to="/dashboard" style={{ color: "#38bdf8", textDecoration: "underline" }}>
-        Go to Dashboard
-      </Link>
+    <div className="not-found-container">
+      <div className="not-found-card">
+        <h1>404</h1>
+        <h2>Page Not Found</h2>
+        <p>The stock research page or route you are looking for does not exist.</p>
+        <Link to="/dashboard" className="btn-primary">
+          Back to Dashboard
+        </Link>
+      </div>
     </div>
   );
 }
@@ -27,57 +31,24 @@ function App() {
     <BrowserRouter>
       <Routes>
         {/* Authentication Routes */}
-        <Route path="/" element={<Register />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
-        {/* Dashboard */}
+        {/* Protected Application Routes wrapped in Layout (Navbar + Content Container) */}
         <Route
-          path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <Layout />
             </ProtectedRoute>
           }
-        />
-
-        {/* Module 1 Routes */}
-        <Route
-          path="/watchlist"
-          element={
-            <ProtectedRoute>
-              <Watchlist />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/preferences"
-          element={
-            <ProtectedRoute>
-              <Preferences />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/research-history"
-          element={
-            <ProtectedRoute>
-              <ResearchHistory />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Module 2 Route */}
-        <Route
-          path="/stock-research"
-          element={
-            <ProtectedRoute>
-              <StockResearch />
-            </ProtectedRoute>
-          }
-        />
+        >
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/stock-research" element={<StockResearch />} />
+          <Route path="/watchlist" element={<Watchlist />} />
+          <Route path="/research-history" element={<ResearchHistory />} />
+          <Route path="/preferences" element={<Preferences />} />
+        </Route>
 
         {/* 404 Route */}
         <Route path="*" element={<NotFound />} />
