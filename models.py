@@ -1,7 +1,9 @@
 import uuid
+import enum
 from sqlalchemy import (
     Column, String, Text, DateTime, Date, BigInteger, Numeric,
-    ForeignKey, UniqueConstraint, CheckConstraint, Index, func
+    ForeignKey, UniqueConstraint, CheckConstraint, Index, func,
+    Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 from database import Base, GUID, JSONType
@@ -118,6 +120,115 @@ class FinancialStatement(Base):
         return f"<FinancialStatement(ticker={self.ticker_symbol}, type={self.statement_type}, period={self.period_ending})>"
 
 
+# ============================================================
+# MODULE 3 MODELS: TASKS, AGENT RESULTS, SOURCES & REPORTS
+# ============================================================
+
+# ── Enums ────────────────────────────────────────────────────────────────────
+
+class TaskStatus(str, enum.Enum):
+    PENDING   = "PENDING"
+    RUNNING   = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED    = "FAILED"
+    PARTIAL   = "PARTIAL"   # some agents succeeded, some failed
+
+
+class AgentName(str, enum.Enum):
+    FUNDAMENTAL = "fundamental"
+    TECHNICAL   = "technical"
+    NEWS        = "news"
+    RISK        = "risk"
+
+
+class AgentStatus(str, enum.Enum):
+    PENDING   = "PENDING"
+    RUNNING   = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED    = "FAILED"
+    SKIPPED   = "SKIPPED"
+
+
+class SourceType(str, enum.Enum):
+    NEWS_ARTICLE    = "NEWS_ARTICLE"
+    COMPANY_FILING  = "COMPANY_FILING"
+    PRESS_RELEASE   = "PRESS_RELEASE"
+    ANALYST_REPORT  = "ANALYST_REPORT"
+
+
+# ── Models ───────────────────────────────────────────────────────────────────
+
+class ResearchTask(Base):
+    __tablename__ = "research_tasks"
+
+    task_id          = Column(GUID, primary_key=True, default=uuid.uuid4)
+    user_id          = Column(GUID, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    ticker_symbol    = Column(String(20), nullable=False)
+    market           = Column(String(20), nullable=False)        # NSE, BSE, NYSE, NASDAQ
+    requested_period = Column(String(20), nullable=False)        # e.g. "1y", "6mo", "3mo"
+    status           = Column(SAEnum(TaskStatus), nullable=False, default=TaskStatus.PENDING)
+    error_message    = Column(Text, nullable=True)
+    created_at       = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at     = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_research_tasks_user_id", "user_id"),
+        Index("ix_research_tasks_ticker",  "ticker_symbol"),
+        Index("ix_research_tasks_status",  "status"),
+    )
+
+
+class AgentResult(Base):
+    __tablename__ = "agent_results"
+
+    result_id     = Column(GUID, primary_key=True, default=uuid.uuid4)
+    task_id       = Column(GUID, ForeignKey("research_tasks.task_id", ondelete="CASCADE"), nullable=False)
+    agent_name    = Column(SAEnum(AgentName), nullable=False)
+    status        = Column(SAEnum(AgentStatus), nullable=False, default=AgentStatus.PENDING)
+    output_json   = Column(JSONType, nullable=True)   # full Pydantic model serialized here
+    error_message = Column(Text, nullable=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at    = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("task_id", "agent_name", name="uq_agent_result_task_agent"),
+        Index("ix_agent_results_task_id", "task_id"),
+    )
+
+
+class SourceDocument(Base):
+    __tablename__ = "source_documents"
+
+    source_id    = Column(GUID, primary_key=True, default=uuid.uuid4)
+    task_id      = Column(GUID, ForeignKey("research_tasks.task_id", ondelete="CASCADE"), nullable=False)
+    source_type  = Column(SAEnum(SourceType), nullable=False)
+    title        = Column(Text, nullable=True)
+    source_url   = Column(Text, nullable=False)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    retrieved_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    content_hash = Column(String(64), nullable=True)   # SHA-256 hex for deduplication
+
+    __table_args__ = (
+        Index("ix_source_documents_task_id",      "task_id"),
+        Index("ix_source_documents_content_hash", "content_hash"),
+    )
+
+
+class ResearchReport(Base):
+    __tablename__ = "research_reports"
+
+    report_id      = Column(GUID, primary_key=True, default=uuid.uuid4)
+    task_id        = Column(GUID, ForeignKey("research_tasks.task_id", ondelete="CASCADE"), nullable=False, unique=True)
+    report_content = Column(JSONType, nullable=True)   # full structured report
+    summary        = Column(Text, nullable=True)    # short plain-text summary
+    limitations    = Column(Text, nullable=True)    # data gaps, disclaimers
+    created_at     = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_research_reports_task_id", "task_id"),
+    )
+
+
 # Compatibility aliases
 StockMetadata = Company
 HistoricalPrice = StockPrice
@@ -131,5 +242,13 @@ __all__ = [
     "StockPrice",
     "FinancialStatement",
     "StockMetadata",
-    "HistoricalPrice"
+    "HistoricalPrice",
+    "TaskStatus",
+    "AgentName",
+    "AgentStatus",
+    "SourceType",
+    "ResearchTask",
+    "AgentResult",
+    "SourceDocument",
+    "ResearchReport",
 ]
