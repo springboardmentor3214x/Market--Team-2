@@ -19,6 +19,11 @@ function StockResearch() {
   const [error, setError] = useState("");
   const [watchlistMessage, setWatchlistMessage] = useState("");
 
+  // Module 3: News & Sentiment Agent State
+  const [newsData, setNewsData] = useState(null);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState("");
+
   const sampleStocks = [
     {
       symbol: "INFY",
@@ -108,6 +113,20 @@ function StockResearch() {
 
   const unavailableStatements = ["IBM"];
 
+  const fetchNewsAnalysis = async (tickerSymbol) => {
+    setNewsLoading(true);
+    setNewsError("");
+    try {
+      const res = await api.get(`/analysis/news/${encodeURIComponent(tickerSymbol)}`);
+      setNewsData(res.data);
+    } catch (err) {
+      console.warn("News agent fetch note:", err);
+      setNewsError("Unable to load live news analysis at this moment.");
+    } finally {
+      setNewsLoading(false);
+    }
+  };
+
   const fetchLiveStock = async (tickerSymbol, selectedPeriodLabel) => {
     if (!tickerSymbol || !tickerSymbol.trim()) return;
     const cleanTicker = tickerSymbol.trim().toUpperCase();
@@ -116,6 +135,9 @@ function StockResearch() {
     setLoading(true);
     setError("");
     setWatchlistMessage("");
+
+    // Fetch live news in parallel
+    fetchNewsAnalysis(cleanTicker);
 
     try {
       const response = await api.get(`/stocks/${encodeURIComponent(cleanTicker)}?period=${backendPeriod}`);
@@ -267,6 +289,15 @@ function StockResearch() {
 
   const allValid = validationChecks.every((check) => check.passed);
 
+  const getSentimentBadgeClass = (sentiment) => {
+    switch ((sentiment || "").toLowerCase()) {
+      case "positive": return "sentiment-positive";
+      case "negative": return "sentiment-negative";
+      case "mixed": return "sentiment-mixed";
+      default: return "sentiment-neutral";
+    }
+  };
+
   return (
     <div className="stock-research">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
@@ -297,7 +328,7 @@ function StockResearch() {
       </div>
 
       <h1>Stock Research Workspace</h1>
-      <p>Search companies and explore live stock market data, Pandas validation, and financial statements.</p>
+      <p>Search companies and explore live market data, AI News & Sentiment Intelligence, Pandas validation, and financials.</p>
 
       <form onSubmit={handleSearch}>
         <input
@@ -316,6 +347,7 @@ function StockResearch() {
 
       {selectedStock && (
         <>
+          {/* 1. STOCK DETAILS */}
           <div className="stock-details">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap" }}>
               <div>
@@ -352,6 +384,163 @@ function StockResearch() {
             </p>
           </div>
 
+          {/* 2. NEWS INTELLIGENCE & SENTIMENT ANALYSIS (MODULE 3 AGENT) */}
+          <div className="news-intelligence">
+            <div className="news-header-row">
+              <div>
+                <h2 style={{ margin: "0 0 6px" }}>📰 News & Sentiment Intelligence (AI Agent)</h2>
+                <p style={{ margin: 0, color: "#64748b", fontSize: "14px" }}>
+                  Real-time sentiment classification, corporate event detection & source verification.
+                </p>
+              </div>
+
+              {newsData && (
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span className={`sentiment-badge-large ${getSentimentBadgeClass(newsData.overall_sentiment)}`}>
+                    ● {newsData.overall_sentiment.toUpperCase()} SENTIMENT
+                  </span>
+                  <button
+                    onClick={() => fetchNewsAnalysis(selectedStock.symbol)}
+                    disabled={newsLoading}
+                    style={{
+                      background: "#e2e8f0",
+                      color: "#1e293b",
+                      border: "none",
+                      padding: "8px 14px",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "13px"
+                    }}
+                  >
+                    {newsLoading ? "Refreshing..." : "↻ Refresh News"}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {newsLoading && !newsData && (
+              <p style={{ color: "#64748b" }}>Analyzing real-time financial news for {selectedStock.symbol}...</p>
+            )}
+
+            {newsError && (
+              <p style={{ color: "#dc2626" }}>{newsError}</p>
+            )}
+
+            {newsData && (
+              <>
+                {/* Stats Breakdown Row */}
+                <div className="sentiment-stats-row">
+                  <div className="sentiment-stat-pill">
+                    Total Articles: <strong>{newsData.total_articles}</strong>
+                  </div>
+                  <div className="sentiment-stat-pill" style={{ color: "#166534" }}>
+                    Positive: <strong>{newsData.positive_count}</strong>
+                  </div>
+                  <div className="sentiment-stat-pill" style={{ color: "#991b1b" }}>
+                    Negative: <strong>{newsData.negative_count}</strong>
+                  </div>
+                  <div className="sentiment-stat-pill" style={{ color: "#475569" }}>
+                    Neutral: <strong>{newsData.neutral_count}</strong>
+                  </div>
+                  <div className="sentiment-stat-pill">
+                    Score: <strong>{newsData.sentiment_score > 0 ? `+${newsData.sentiment_score}` : newsData.sentiment_score}</strong>
+                  </div>
+                </div>
+
+                {/* AI Executive Summary Box */}
+                {newsData.summary && (
+                  <div className="news-summary-box">
+                    <strong>AI Sentiment Analysis Summary:</strong>
+                    <p style={{ margin: "6px 0 0" }}>{newsData.summary}</p>
+                  </div>
+                )}
+
+                {/* Conflicting Reports Alert Box */}
+                {newsData.conflicting_reports && newsData.conflicting_reports.length > 0 && (
+                  <div className="conflict-alert-box">
+                    <h4>⚠️ Conflicting Signals & Market Uncertainties Detected:</h4>
+                    <ul style={{ margin: "6px 0 0", paddingLeft: "20px" }}>
+                      {newsData.conflicting_reports.map((cr, idx) => (
+                        <li key={idx} style={{ marginBottom: "4px" }}>{cr}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Corporate Events Grid */}
+                {newsData.corporate_events && newsData.corporate_events.length > 0 && (
+                  <div>
+                    <h3 style={{ margin: "0 0 12px", color: "#1e3a8a", fontSize: "16px" }}>
+                      ⚡ Detected Corporate Announcements ({newsData.corporate_events.length})
+                    </h3>
+                    <div className="corporate-events-grid">
+                      {newsData.corporate_events.map((ev, idx) => (
+                        <div key={idx} className="corporate-event-card">
+                          <span className="event-type-badge">{ev.event_type}</span>
+                          <h4 style={{ margin: "0 0 6px", fontSize: "14px", color: "#0f172a" }}>
+                            {ev.headline}
+                          </h4>
+                          {ev.summary && (
+                            <p style={{ margin: "0 0 8px", fontSize: "12px", color: "#334155" }}>
+                              {ev.summary}
+                            </p>
+                          )}
+                          <div style={{ fontSize: "11px", color: "#64748b", display: "flex", justifyContent: "space-between" }}>
+                            <span>Source: {ev.source}</span>
+                            <span>{ev.published_at ? ev.published_at.slice(0, 10) : "Recent"}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Verified Source News Articles Feed */}
+                {newsData.articles && newsData.articles.length > 0 && (
+                  <div>
+                    <h3 style={{ margin: "16px 0 12px", color: "#1e3a8a", fontSize: "16px" }}>
+                      📰 Verified News Feed & Sentiment Classification
+                    </h3>
+                    <div className="news-articles-list">
+                      {newsData.articles.map((art, idx) => (
+                        <div key={idx} className="news-article-card">
+                          <div className="news-article-header">
+                            {art.url ? (
+                              <a
+                                href={art.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="news-article-title"
+                              >
+                                {art.headline} ↗
+                              </a>
+                            ) : (
+                              <span className="news-article-title">{art.headline}</span>
+                            )}
+                            <span className={`article-sentiment-tag ${getSentimentBadgeClass(art.sentiment)}`}>
+                              {art.sentiment}
+                            </span>
+                          </div>
+
+                          <div className="news-article-meta">
+                            <span><strong>Source:</strong> {art.source}</span>
+                            <span><strong>Date:</strong> {art.published_at ? art.published_at.replace("T", " ").replace("Z", " UTC") : "Recent"}</span>
+                            {art.category && <span><strong>Category:</strong> {art.category}</span>}
+                          </div>
+
+                          {art.summary && (
+                            <p className="news-article-summary">{art.summary}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* 3. HISTORICAL PRICES */}
           <div className="historical-prices">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
               <h2>Historical Stock Prices</h2>
@@ -408,6 +597,7 @@ function StockResearch() {
             )}
           </div>
 
+          {/* 4. FINANCIAL STATEMENTS */}
           <div className="financial-statements">
             <h2>Financial Statements</h2>
 
@@ -453,6 +643,7 @@ function StockResearch() {
             )}
           </div>
 
+          {/* 5. DATA SOURCE & VALIDATION */}
           <div className="data-metadata">
             <h2>Data Source & Validation (Pandas Engine)</h2>
 
