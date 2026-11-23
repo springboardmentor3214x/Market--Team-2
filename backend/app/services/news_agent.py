@@ -189,6 +189,18 @@ class NewsAgentService:
         - Persists to source_documents & agent_results if task_id & db are provided.
         """
         ticker = request.ticker.strip().upper()
+        company_name = request.company_name
+
+        # Fetch company profile from data_access if db provided and name not supplied
+        if not company_name and db:
+            try:
+                import data_access
+                c_info = data_access.get_company_info(db, ticker)
+                if c_info:
+                    company_name = c_info.get("company_name")
+            except Exception:
+                pass
+
         articles_to_process: List[NewsArticle] = []
 
         # 1. Determine article input source
@@ -201,7 +213,7 @@ class NewsAgentService:
         if not articles_to_process:
             return NewsAnalysisResponse(
                 ticker=ticker,
-                company_name=request.company_name,
+                company_name=company_name,
                 overall_sentiment="insufficient_data",
                 sentiment_score=0.0,
                 total_articles=0,
