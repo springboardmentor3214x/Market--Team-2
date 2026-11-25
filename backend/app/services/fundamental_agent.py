@@ -234,3 +234,158 @@ class FundamentalAgentService:
 
 
 fundamental_agent = FundamentalAgentService()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DB-DRIVEN ENTRY POINT (added for Module 3 Priority 1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import sys
+import os as _os
+
+# Ensure project root (Market--Team-2/) is on path so root-level modules load
+_PROJECT_ROOT = _os.path.abspath(
+    _os.path.join(_os.path.dirname(__file__), "..", "..", "..", "..")
+)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+
+def _safe_get(data: dict, *keys) -> Optional[float]:
+    """
+    Flexible key lookup for JSONB financial data.
+    yfinance stores fields under different key names — this handles all variants.
+    Returns None (never raises) if no key matches or value is non-numeric.
+    """
+    for k in keys:
+        val = data.get(k)
+        if val is not None:
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+def run_fundamental_from_db(
+    db,                 # sqlalchemy.orm.Session
+    ticker: str
+) -> FundamentalAnalysisResponse:
+    """
+    Fully automatic DB-driven fundamental analysis.
+
+    Flow:
+      1. Fetch StockMetadata  → company name, P/E, market cap (from stock_metadata table)
+      2. Fetch FinancialStatement JSONB rows → income & balance sheet data
+      3. Extract financial values using flexible key lookup
+      4. Derive P/B from market_cap ÷ equity when not stored directly
+      5. Build FundamentalAnalysisRequest and run existing analyze()
+      6. Return FundamentalAnalysisResponse with real calculated values
+    """
+    from backend.app.models.market_data import StockMetadata
+
+    # Root-level FinancialStatement uses database.Base (Module 2 work)
+    from models import FinancialStatement
+
+    ticker      = ticker.upper().strip()
+    limitations = []
+
+    # ── Step 1: Company metadata ──────────────────────────────────────────────
+    meta         = db.query(StockMetadata).filter(StockMetadata.ticker == ticker).first()
+    company_name = meta.name    if meta else ticker
+    pe_ratio     = float(meta.pe_ratio)    if (meta and meta.pe_ratio)    else None
+    market_cap   = float(meta.market_cap)  if (meta and meta.market_cap)  else None
+
+    if not meta:
+        limitations.append(
+            f"No company metadata found for {ticker}. "
+            "Run POST /stocks/fetch/{ticker} first to populate the database."
+        )
+
+    # ── Step 2: Income Statement (most recent period) ─────────────────────────
+    income_row = (
+        db.query(FinancialStatement)
+        .filter(
+            FinancialStatement.ticker_symbol == ticker,
+            FinancialStatement.statement_type == "INCOME_STATEMENT"
+        )
+        .order_by(FinancialStatement.period_ending.desc())
+        .first()
+    )
+    income_data = income_row.statement_data if income_row else {}
+
+    if not income_row:
+        limitations.append(
+            "No income statement found in DB. "
+            "Run the Module 2 market data fetch to populate financial statements."
+        )
+
+    # ── Step 3: Balance Sheet (most recent period) ────────────────────────────
+    balance_row = (
+        db.query(FinancialStatement)
+        .filter(
+            FinancialStatement.ticker_symbol == ticker,
+            FinancialStatement.statement_type == "BALANCE_SHEET"
+        )
+        .order_by(FinancialStatement.period_ending.desc())
+        .first()
+    )
+    balance_data = balance_row.statement_data if balance_row else {}
+
+    if not balance_row:
+        limitations.append(
+            "No balance sheet found in DB. "
+            "Run the Module 2 market data fetch to populate financial statements."
+        )
+
+    # ── Step 4: Extract values with flexible key lookup ───────────────────────
+    # yfinance uses different key names depending on the ticker type (US vs Indian)
+    revenue = _safe_get(
+        income_data,
+        "Total Revenue", "totalRevenue", "Revenue"
+    )
+    net_income = _safe_get(
+        income_data,
+        "Net Income", "netIncome",
+        "Net Income Common Stockholders",
+        "Net Income From Continuing Operation Net Minority Interest"
+    )
+    total_assets = _safe_get(
+        balance_data,
+        "Total Assets", "totalAssets"
+    )
+    total_debt = _safe_get(
+        balance_data,
+        "Total Debt", "totalDebt",
+        "Long Term Debt", "longTermDebt"
+    )
+    equity = _safe_get(
+        balance_data,
+        "Total Equity Gross Minority Interest",
+        "Stockholders Equity", "totalStockholderEquity",
+        "Total Stockholder Equity", "stockholdersEquity"
+    )
+
+    # ── Step 5: Derive P/B ratio from market_cap ÷ equity ────────────────────
+    pb_ratio = None
+    if market_cap and equity and equity > 0:
+        pb_ratio = round(market_cap / equity, 4)
+
+    # ── Step 6: Build request and run existing analyze() ─────────────────────
+    request = FundamentalAnalysisRequest(
+        ticker=ticker,
+        company_name=company_name,
+        revenue=revenue,
+        net_income=net_income,
+        total_assets=total_assets,
+        total_debt=total_debt,
+        shareholders_equity=equity,
+        pe_ratio=pe_ratio,
+        pb_ratio=pb_ratio,
+    )
+
+    response = fundamental_agent.analyze(request)
+
+    # Append DB-sourced limitations to agent-generated ones
+    response.data_limitations.extend(limitations)
+
+    return response

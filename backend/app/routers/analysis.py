@@ -32,7 +32,7 @@ from backend.app.validators.financial_validators import (
     validate_ohlcv_data,
     validate_financial_statement,
 )
-
+from backend.app.services.fundamental_agent import run_fundamental_from_db
 
 router = APIRouter(
     prefix="/analysis",
@@ -64,7 +64,35 @@ def analyze_fundamentals(payload: FundamentalAnalysisRequest):
 
     return fundamental_agent.analyze(payload)
 
+@router.get(
+    "/fundamental/{ticker}",
+    response_model=FundamentalAnalysisResponse,
+    summary="Automatic DB-driven fundamental analysis"
+)
+def analyze_fundamentals_db(
+    ticker: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Fully automatic fundamental analysis — just provide the ticker symbol.
+    Fetches financial data from the database automatically.
 
+    Example calls:
+      GET /analysis/fundamental/INFY.NS
+      GET /analysis/fundamental/TCS.NS
+      GET /analysis/fundamental/RELIANCE.NS
+
+    Prerequisites:
+      Run POST /stocks/fetch/{ticker} first if data_limitations appear
+      in the response — that call populates the database with market data.
+    """
+    try:
+        return run_fundamental_from_db(db, ticker)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fundamental analysis error: {str(e)}"
+        )
 @router.post(
     "/technical",
     response_model=TechnicalAnalysisResponse
